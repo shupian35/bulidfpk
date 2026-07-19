@@ -1,168 +1,277 @@
-name: Build AniRSS and Release
+name: AniRSS Build & Release
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   workflow_dispatch:
     inputs:
       version:
-        description: '上游 release tag（不带 v 前缀，例如 3.1.74）'
-        required: true
+        description: '上游版本（留空自动取 latest release tag；想重打历史版本就填具体版本号，例如 3.1.74）'
+        required: false
+        default: ""
         type: string
       manifest_version:
-        description: 'manifest 中的版本号（带 -N 重发布后缀，例如 3.1.74-1）'
-        required: true
+        description: 'manifest 版本号（留空默认 ${UPSTREAM}-1，重发布时填 -2 / -3）'
+        required: false
+        default: ""
         type: string
       changelog:
-        description: '更新日志（支持中文）'
-        required: true
+        description: '更新日志（留空用上游 release body）'
+        required: false
+        default: ""
         type: string
       publish:
-        description: '是否发布到 FnDepot Release'
+        description: '是否发布到 FnDepot（仅当 secrets.BUILDBOT 已配置时有效）'
         required: false
-        type: boolean
         default: true
+        type: boolean
+      force:
+        description: '强制构建（忽略版本对比）'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: anirss-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  check:
+    name: 检查上游版本
     runs-on: ubuntu-24.04
     outputs:
-      app_name: ${{ steps.set_vars.outputs.app_name }}
-      manifest_version: ${{ steps.set_vars.outputs.manifest_version }}
-      upstream_version: ${{ steps.set_vars.outputs.upstream_version }}
-      changelog: ${{ steps.set_vars.outputs.changelog }}
+      should_build: ${{ steps.compare.outputs.should_build }}
+      upstream_version: ${{ steps.fetch.outputs.upstream_version }}
+      manifest_version: ${{ steps.calc.outputs.manifest_version }}
+      changelog: ${{ steps.fetch.outputs.changelog }}
+      asset_url: ${{ steps.fetch.outputs.asset_url }}
     steps:
-      - name: 设置项目变量
-        id: set_vars
-        run: |
-          APP_NAME="AniRSS"
-          VERSION="${{ github.event.inputs.version }}"
-          MANIFEST_VERSION="${{ github.event.inputs.manifest_version }}"
-          CHANGELOG="${{ github.event.inputs.changelog }}"
-          echo "app_name=$APP_NAME"            >> $GITHUB_OUTPUT
-          echo "upstream_version=$VERSION"     >> $GITHUB_OUTPUT
-          echo "manifest_version=$MANIFEST_VERSION" >> $GITHUB_OUTPUT
-          echo "changelog=$CHANGELOG"          >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: 从 wushuo894/ani-rss latest release 下载 ani-rss.jar
+      - name: 安装 jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: 读取上次构建版本
+        id: last
+        run: |
+          LAST=""
+          if [ -f fnpack/AniRSS/.last_built_version ]; then
+            LAST=$(cat fnpack/AniRSS/.last_built_version | tr -d '[:space:]')
+          fi
+          echo "last=$LAST" >> $GITHUB_OUTPUT
+          echo "Last built version: ${LAST:-<none>}"
+
+      - name: 获取上游最新 release
+        id: fetch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          set -e
-          # 既支持手动指定 version，也支持不指定时取 latest
-          if [ -n "${{ steps.set_vars.outputs.upstream_version }}" ]; then
-            TAG="v${{ steps.set_vars.outputs.upstream_version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="v$INPUT_VERSION"
+            UPSTREAM_VERSION="$INPUT_VERSION"
           else
             TAG=$(curl -s -H "Authorization: token $GH_TOKEN" \
               https://api.github.com/repos/wushuo894/ani-rss/releases/latest \
-              | jq -r .tag_name)
+              | jq -r '.tag_name // empty')
+            if [ -z "$TAG" ]; then
+              echo "::error::无法获取 wushuo894/ani-rss 的 latest release"
+              exit 1
+            fi
+            UPSTREAM_VERSION="${TAG#v}"
           fi
-          echo "Target tag: ${TAG}"
-          DOWNLOAD_URL=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/wushuo894/ani-rss/releases/tags/${TAG}" \
-            | jq -r '.assets[] | select(.name=="ani-rss.jar") | .browser_download_url')
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "错误：未找到 ani-rss.jar 资产（请确认 ${TAG} 已发布）"
+          echo "upstream_version=$UPSTREAM_VERSION" >> $GITHUB_OUTPUT
+          echo "Upstream tag: $TAG"
+
+          BODY=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/wushuo894/ani-rss/releases/tags/$TAG" \
+            | jq -r '.body // ""')
+          {
+            echo "changelog<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          ASSET_URL=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/wushuo894/ani-rss/releases/tags/$TAG" \
+            | jq -r '.assets[]? | select(.name=="ani-rss.jar") | .browser_download_url')
+          if [ -z "$ASSET_URL" ]; then
+            echo "::error::未在 $TAG 找到 ani-rss.jar 资产"
             exit 1
           fi
-          echo "下载：${DOWNLOAD_URL}"
-          wget -q "${DOWNLOAD_URL}" -O ani-rss.jar
-          ls -lh ani-rss.jar
+          echo "asset_url=$ASSET_URL" >> $GITHUB_OUTPUT
 
-      - name: 检出 buildbot 仓库
-        uses: actions/checkout@v6
+      - name: 对比版本决定是否构建
+        id: compare
+        env:
+          LAST: ${{ steps.last.outputs.last }}
+          UPSTREAM: ${{ steps.fetch.outputs.upstream_version }}
+          FORCE: ${{ github.event.inputs.force }}
+          EVENT: ${{ github.event.name }}
+        run: |
+          SHOULD="false"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            SHOULD="true"; REASON="manual dispatch"
+          elif [ "$FORCE" = "true" ]; then
+            SHOULD="true"; REASON="force flag"
+          elif [ -z "$LAST" ]; then
+            SHOULD="true"; REASON="no prior build"
+          elif [ "$LAST" = "$UPSTREAM" ]; then
+            SHOULD="false"; REASON="upstream $UPSTREAM already built"
+          else
+            SHOULD="true"; REASON="new version $UPSTREAM > $LAST"
+          fi
+          echo "should_build=$SHOULD" >> $GITHUB_OUTPUT
+          echo "Decision: $REASON"
+
+      - name: 计算 manifest_version
+        id: calc
+        if: steps.compare.outputs.should_build == 'true'
+        env:
+          INPUT_MV: ${{ github.event.inputs.manifest_version }}
+          UPSTREAM: ${{ steps.fetch.outputs.upstream_version }}
+        run: |
+          if [ -n "$INPUT_MV" ]; then
+            MV="$INPUT_MV"
+          else
+            MV="${UPSTREAM}-1"
+          fi
+          echo "manifest_version=$MV" >> $GITHUB_OUTPUT
+          echo "manifest_version: $MV"
+
+  build:
+    name: 打 fpk
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
         with:
           path: buildbot_repo
+
+      - name: 下载 ani-rss.jar
+        run: |
+          URL="${{ needs.check.outputs.asset_url }}"
+          wget -q "$URL" -O ani-rss.jar
+          ls -lh ani-rss.jar
 
       - name: 准备 fnpack 工具和模板
         run: |
           mkdir -p build_workspace
-          cp -r "buildbot_repo/fnpack/${{ steps.set_vars.outputs.app_name }}" build_workspace/
+          cp -r "buildbot_repo/fnpack/AniRSS" build_workspace/
           cp "buildbot_repo/fnpack/fnpack-1.2.1-linux-amd64" build_workspace/fnpack
           chmod +x build_workspace/fnpack
 
-      # ========== AniRSS 专属：把 jar 拷到 app/app_tmp ==========
-      - name: 把 ani-rss.jar 复制到 app/app_tmp 目录
+      - name: 把 ani-rss.jar 复制到 app/app_tmp
         run: |
-          APP_DIR="build_workspace/${{ steps.set_vars.outputs.app_name }}/app/app_tmp"
+          APP_DIR="build_workspace/AniRSS/app/app_tmp"
           mkdir -p "$APP_DIR"
-          # 清空 .keep 之外的旧产物（理论上空，但保险起见）
           find "$APP_DIR" -mindepth 1 -not -name '.keep' -delete
           cp ani-rss.jar "$APP_DIR/ani-rss.jar"
-          echo "复制完成，app/app_tmp 目录内容："
-          ls -la "$APP_DIR"
 
       - name: 修改 manifest 文件
         run: |
-          MANIFEST_PATH="build_workspace/${{ steps.set_vars.outputs.app_name }}/manifest"
-          if [ ! -f "$MANIFEST_PATH" ]; then
-            echo "错误：manifest 文件不存在于 $MANIFEST_PATH"
-            exit 1
-          fi
-          MANIFEST_VERSION="${{ steps.set_vars.outputs.manifest_version }}"
-          CHANGELOG="${{ steps.set_vars.outputs.changelog }}"
+          MANIFEST_PATH="build_workspace/AniRSS/manifest"
+          MV="${{ needs.check.outputs.manifest_version }}"
+          CHANGELOG="${{ needs.check.outputs.changelog }}"
           sudo apt-get update && sudo apt-get install -y jq
           ESCAPED_CHANGELOG=$(printf '%s' "$CHANGELOG" | jq -sRr @json)
-          sed -i "s/\${VERSION}/$MANIFEST_VERSION/g"   "$MANIFEST_PATH"
+          sed -i "s/\${VERSION}/$MV/g" "$MANIFEST_PATH"
           sed -i "s/\${CHANGELOG}/$ESCAPED_CHANGELOG/g" "$MANIFEST_PATH"
-          echo "manifest 修改后的内容："
-          cat "$MANIFEST_PATH"
 
       - name: 执行 fnpack 打包
         run: |
           cd build_workspace
-          ./fnpack build "${{ steps.set_vars.outputs.app_name }}"
+          ./fnpack build AniRSS
           FPK_FILE=$(ls *.fpk | head -n 1)
           if [ -z "$FPK_FILE" ]; then
-            echo "错误：未找到生成的 .fpk 文件"
+            echo "::error::fnpack 未生成 .fpk 文件"
             exit 1
           fi
-          FINAL_NAME="${{ steps.set_vars.outputs.app_name }}-${{ steps.set_vars.outputs.manifest_version }}-all.fpk"
+          FINAL_NAME="AniRSS-${{ needs.check.outputs.manifest_version }}-all.fpk"
           mv "$FPK_FILE" "$FINAL_NAME"
           echo "FINAL_FPK=$FINAL_NAME" >> $GITHUB_ENV
-          echo "打包完成，生成文件：$FINAL_NAME"
-          ls -la *.fpk
 
-      - name: 上传 fpk 文件作为 Artifact（供发布任务使用）
+      - name: 上传 fpk 作为 Artifact
         uses: actions/upload-artifact@v7
         with:
           name: fpk-all
           path: build_workspace/*.fpk
           if-no-files-found: error
 
+      - name: 更新 .last_built_version 并提交
+        run: |
+          UPSTREAM="${{ needs.check.outputs.upstream_version }}"
+          if [ -f fnpack/AniRSS/.last_built_version ] && \
+             [ "$(cat fnpack/AniRSS/.last_built_version | tr -d '[:space:]')" = "$UPSTREAM" ]; then
+            echo "Already marked as $UPSTREAM"
+            exit 0
+          fi
+          echo "$UPSTREAM" > fnpack/AniRSS/.last_built_version
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add fnpack/AniRSS/.last_built_version
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "chore(anirss): mark $UPSTREAM as built"
+            git push
+          fi
+
   publish:
-    name: 发布到 FnDepot Release
+    name: 发布到 FnDepot
     needs: build
-    if: always() && needs.build.result == 'success' && github.event.inputs.publish == 'true'
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     steps:
-      - name: 下载 fpk 文件
+      - name: 下载 fpk
         uses: actions/download-artifact@v7
         with:
           path: fpk_files
           merge-multiple: true
 
-      - name: 生成当前日期 tag（格式 YYYY.M.D）
-        id: date_tag
+      - name: 判断是否执行发布
+        id: decide
+        env:
+          EVENT: ${{ github.event.name }}
+          PUB: ${{ github.event.inputs.publish }}
         run: |
-          TAG=$(date +'%Y.%-m.%-d')
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "RELEASE_TITLE=「$TAG 更新」" >> $GITHUB_OUTPUT
-          echo "Tag: $TAG"
+          if [ "$EVENT" = "schedule" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "schedule -> try publish"
+          elif [ "$PUB" = "true" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "manual + publish=true"
+          else
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "manual + publish=false"
+          fi
 
-      - name: 使用 GitHub CLI 发布到 shuangji66/FnDepot
+      - name: 发布到 FnDepot Release
+        if: steps.decide.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.BUILDBOT }}
         run: |
-          REPO="shuangji66/FnDepot"
-          TAG="${{ steps.date_tag.outputs.tag }}"
-          TITLE="${{ steps.date_tag.outputs.RELEASE_TITLE }}"
-          MANIFEST_VERSION="${{ needs.build.outputs.manifest_version }}"
-          UPSTREAM_VERSION="${{ needs.build.outputs.upstream_version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::secrets.BUILDBOT 未配置，跳过 FnDepot 发布（如需启用请在仓库 Settings -> Secrets 添加 repo scope 的 PAT）"
+            exit 0
+          fi
 
-          NEW_NOTE="构建 ${{ needs.build.outputs.app_name }} 版本 ${MANIFEST_VERSION}（基于上游 v${UPSTREAM_VERSION}）。更新日志：${CHANGELOG}"
+          REPO="shuangji66/FnDepot"
+          TAG=$(date +'%Y.%-m.%-d')
+          TITLE="$TAG 更新"
+          MANIFEST_VERSION="${{ needs.check.outputs.manifest_version }}"
+          UPSTREAM_VERSION="${{ needs.check.outputs.upstream_version }}"
+          CHANGELOG="${{ needs.check.outputs.changelog }}"
+
+          NEW_NOTE="构建 AniRSS 版本 ${MANIFEST_VERSION}（基于上游 v${UPSTREAM_VERSION}）。更新日志：${CHANGELOG}"
 
           if gh release view "$TAG" --repo "$REPO" &>/dev/null; then
-            echo "Release $TAG 已存在，将追加资产并拼接描述"
             CURRENT_BODY=$(gh release view "$TAG" --repo "$REPO" --json body -q .body)
             if [ -n "$CURRENT_BODY" ]; then
               NEW_BODY="${CURRENT_BODY}"$'\n'"$NEW_NOTE"
@@ -171,46 +280,27 @@ jobs:
             fi
             gh release edit "$TAG" --repo "$REPO" --notes "$NEW_BODY"
           else
-            echo "Release $TAG 不存在，将创建新 Release"
             gh release create "$TAG" --repo "$REPO" --title "$TITLE" --notes "$NEW_NOTE"
           fi
 
           for fpk in fpk_files/*.fpk; do
-            echo "上传 $fpk"
             gh release upload "$TAG" "$fpk" --repo "$REPO" --clobber
           done
 
-      - name: 更新 fnpack.json 中的 AniRSS 条目
-        env:
-          GH_TOKEN: ${{ secrets.BUILDBOT }}
-        run: |
-          REPO="shuangji66/FnDepot"
-          TAG="${{ steps.date_tag.outputs.tag }}"
-          APP_NAME="${{ needs.build.outputs.app_name }}"
-          MANIFEST_VERSION="${{ needs.build.outputs.manifest_version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
-
-          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-${MANIFEST_VERSION}-all.fpk"
-
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" fndepot_repo
           cd fndepot_repo
-
-          if [ ! -f fnpack.json ]; then
-            echo '{}' > fnpack.json
-          fi
-
-          jq --arg app "$APP_NAME" \
-             --arg version "$MANIFEST_VERSION" \
+          if [ ! -f fnpack.json ]; then echo '{}' > fnpack.json; fi
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/AniRSS-${MANIFEST_VERSION}-all.fpk"
+          jq --arg version "$MANIFEST_VERSION" \
              --arg changelog "$CHANGELOG" \
              --arg url "$DOWNLOAD_URL" \
-             '.[$app].version = $version |
-              .[$app].changelog = $changelog |
-              .[$app].download_url = $url' \
+             '.AniRSS.version = $version |
+              .AniRSS.changelog = $changelog |
+              .AniRSS.download_url = $url' \
              fnpack.json > fnpack.json.tmp
           mv fnpack.json.tmp fnpack.json
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add fnpack.json
-          git commit -m "chore: update ${APP_NAME} to ${MANIFEST_VERSION} (${TAG})"
+          git commit -m "chore: update AniRSS to ${MANIFEST_VERSION} (${TAG})"
           git push
