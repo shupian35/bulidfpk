@@ -309,9 +309,12 @@ jobs:
           jq --arg version "$MANIFEST_VERSION" \
              --arg changelog "$CHANGELOG" \
              --arg url "$DOWNLOAD_URL" \
+             --arg date "$TAG" \
              '.AniRSS.version = $version |
               .AniRSS.changelog = $changelog |
-              .AniRSS.download_url = $url' \
+              .AniRSS.arch_diff.x86.download_url = $url |
+              .AniRSS.arch_diff.arm.download_url = $url |
+              .AniRSS.update_date = $date' \
              fnpack.json > fnpack.json.tmp
           mv fnpack.json.tmp fnpack.json
           git config user.name "github-actions[bot]"
