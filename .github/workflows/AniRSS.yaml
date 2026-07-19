@@ -207,7 +207,7 @@ jobs:
             echo "::error::fnpack 未生成 .fpk 文件"
             exit 1
           fi
-          FINAL_NAME="AniRSS-${{ needs.build.outputs.manifest_version }}-all.fpk"
+          FINAL_NAME="AniRSS-${{ steps.modify.outputs.manifest_version }}-all.fpk"
           mv "$FPK_FILE" "$FINAL_NAME"
           echo "FINAL_FPK=$FINAL_NAME" >> $GITHUB_ENV
 
