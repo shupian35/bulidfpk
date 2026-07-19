@@ -1,0 +1,19 @@
+#!/bin/bash
+LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/logs/ani-rss.log"
+APP_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+}
+
+mkdir -p "${APP_DIR}/logs"
+
+if [ -d "${TRIM_APPDEST}/app_tmp" ] && [ "$(ls -A ${TRIM_APPDEST}/app_tmp 2>/dev/null)" ]; then
+    cp -rf ${TRIM_APPDEST}/app_tmp/* "${APP_DIR}/"
+    log_msg "成功释放运行文件 (ani-rss.jar)"
+fi
+rm -rf ${TRIM_APPDEST}/app_tmp
+log_msg "清理内置库完成"
+
+log_msg "部署完成"
+exit 0

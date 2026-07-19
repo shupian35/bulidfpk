@@ -1,0 +1,22 @@
+[
+  {
+    "stepTitle": "确认卸载",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "您即将卸载 ANI-RSS 应用。所有未完成的订阅任务会停止。请选择如何处理应用数据。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_data_action",
+        "label": "数据保留选项",
+        "rules": [],
+        "options": [
+          {"label": "保留数据（推荐）- 重新安装时可恢复订阅与配置", "value": "keep"},
+          {"label": "删除所有数据 - 不可恢复，将删除 ani-rss.jar / config.v2.json / logs 等", "value": "delete"}
+        ],
+        "initValue": "keep"
+      }
+    ]
+  }
+]

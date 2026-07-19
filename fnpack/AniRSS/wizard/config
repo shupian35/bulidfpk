@@ -1,0 +1,75 @@
+[
+  {
+    "stepTitle": "基础设置",
+    "items": [
+      {
+        "type": "radio",
+        "field": "run_mode",
+        "label": "内存模式",
+        "rules": [],
+        "options": [
+          {"label": "低内存模式", "value": "low"},
+          {"label": "高内存模式", "value": "high"}
+        ],
+        "initValue": "low"
+      },
+      {
+        "type": "text",
+        "field": "ui_port",
+        "label": "Web 端口",
+        "rules": [
+          {"required": true, "message": "请输入端口号"},
+          {"pattern": "^[0-9]+$", "message": "端口必须为数字"}
+        ],
+        "options": [],
+        "initValue": "7789",
+        "helpText": "修改端口后需要重启应用才能生效"
+      }
+    ]
+  },
+  {
+    "stepTitle": "高级设置",
+    "items": [
+      {
+        "type": "switch",
+        "field": "proxy_enabled",
+        "label": "启用 HTTP 代理",
+        "rules": [],
+        "options": [],
+        "initValue": "false"
+      },
+      {
+        "type": "text",
+        "field": "proxy_host",
+        "label": "代理服务器 IP",
+        "rules": [],
+        "options": [],
+        "initValue": "127.0.0.1"
+      },
+      {
+        "type": "text",
+        "field": "proxy_port",
+        "label": "代理服务器端口",
+        "rules": [],
+        "options": [],
+        "initValue": "7890"
+      },
+      {
+        "type": "switch",
+        "field": "mcp_enabled",
+        "label": "启用 MCP Server",
+        "rules": [],
+        "options": [],
+        "initValue": "false"
+      },
+      {
+        "type": "switch",
+        "field": "swagger_enabled",
+        "label": "启用 Swagger UI",
+        "rules": [],
+        "options": [],
+        "initValue": "false"
+      }
+    ]
+  }
+]

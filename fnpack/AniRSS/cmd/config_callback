@@ -1,0 +1,3 @@
+#!/bin/bash
+# AniRSS 端口/代理等通过 wizard 字段直接作为环境变量传入 cmd/main，无需生成配置文件
+exit 0

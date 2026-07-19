@@ -1,0 +1,22 @@
+{
+  "data-share": {
+    "shares": [
+      {
+        "name": "AniRSS",
+        "permission": {
+          "rw": [
+            "AniRSS"
+          ]
+        }
+      },
+      {
+        "name": "AniRSS/logs",
+        "permission": {
+          "rw": [
+            "AniRSS"
+          ]
+        }
+      }
+    ]
+  }
+}

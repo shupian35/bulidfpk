@@ -1,0 +1,16 @@
+#!/bin/bash
+LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/logs/ani-rss.log"
+APP_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+}
+
+if [ -d "${TRIM_APPDEST}/app_tmp" ] && [ "$(ls -A ${TRIM_APPDEST}/app_tmp 2>/dev/null)" ]; then
+    cp -rf ${TRIM_APPDEST}/app_tmp/* "${APP_DIR}/"
+    log_msg "升级: 成功释放运行文件"
+fi
+rm -rf ${TRIM_APPDEST}/app_tmp
+
+log_msg "升级完成"
+exit 0
