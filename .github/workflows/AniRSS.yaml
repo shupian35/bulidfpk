@@ -188,8 +188,16 @@ jobs:
           ESCAPED_CHANGELOG=$(printf '%s' "$CHANGELOG" | jq -sRr @json)
           sed -i "s/\${VERSION}/$MV/g" "$MANIFEST_PATH"
           sed -i "s/\${CHANGELOG}/$ESCAPED_CHANGELOG/g" "$MANIFEST_PATH"
-          echo "manifest_version=$MV" >> $GITHUB_OUTPUT
-          echo "changelog=$CHANGELOG" >> $GITHUB_OUTPUT
+          {
+            echo 'manifest_version<<EOF'
+            echo "$MV"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+          {
+            echo 'changelog<<EOF'
+            echo "$CHANGELOG"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
       - name: 执行 fnpack 打包
         run: |
           cd build_workspace
