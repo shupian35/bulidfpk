@@ -262,7 +262,7 @@ jobs:
             exit 0
           fi
 
-          REPO="shuangji66/FnDepot"
+          REPO="shupian35/FnDepot"
           TAG=$(date +'%Y.%-m.%-d')
           TITLE="$TAG 更新"
           MANIFEST_VERSION="${{ needs.check.outputs.manifest_version }}"
