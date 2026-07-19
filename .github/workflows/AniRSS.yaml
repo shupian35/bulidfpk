@@ -152,7 +152,7 @@ jobs:
     outputs:
       manifest_version: ${{ steps.modify.outputs.manifest_version }}
       changelog: ${{ steps.modify.outputs.changelog }}
-      upstream_version: ${{ needs.build.outputs.upstream_version }}
+      upstream_version: ${{ needs.check.outputs.upstream_version }}
     steps:
       - uses: actions/checkout@v6
         with:
