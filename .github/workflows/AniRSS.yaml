@@ -149,6 +149,10 @@ jobs:
     needs: check
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-24.04
+    outputs:
+      manifest_version: ${{ steps.modify.outputs.manifest_version }}
+      changelog: ${{ steps.modify.outputs.changelog }}
+      upstream_version: ${{ needs.build.outputs.upstream_version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -175,15 +179,17 @@ jobs:
           cp ani-rss.jar "$APP_DIR/ani-rss.jar"
 
       - name: 修改 manifest 文件
+        id: modify
         run: |
           MANIFEST_PATH="build_workspace/AniRSS/manifest"
-          MV="${{ needs.check.outputs.manifest_version }}"
-          CHANGELOG="${{ needs.check.outputs.changelog }}"
+          MV="${{ needs.build.outputs.manifest_version }}"
+          CHANGELOG="${{ needs.build.outputs.changelog }}"
           sudo apt-get update && sudo apt-get install -y jq
           ESCAPED_CHANGELOG=$(printf '%s' "$CHANGELOG" | jq -sRr @json)
-          sed -i "s/\${VERSION}/$MV/g" "$MANIFEST_PATH"
-          sed -i "s/\${CHANGELOG}/$ESCAPED_CHANGELOG/g" "$MANIFEST_PATH"
-
+          sed -i "s/${VERSION}/$MV/g" "$MANIFEST_PATH"
+          sed -i "s/${CHANGELOG}/$ESCAPED_CHANGELOG/g" "$MANIFEST_PATH"
+          echo "manifest_version=$MV" >> $GITHUB_OUTPUT
+          echo "changelog=$CHANGELOG" >> $GITHUB_OUTPUT
       - name: 执行 fnpack 打包
         run: |
           cd build_workspace
@@ -193,7 +199,7 @@ jobs:
             echo "::error::fnpack 未生成 .fpk 文件"
             exit 1
           fi
-          FINAL_NAME="AniRSS-${{ needs.check.outputs.manifest_version }}-all.fpk"
+          FINAL_NAME="AniRSS-${{ needs.build.outputs.manifest_version }}-all.fpk"
           mv "$FPK_FILE" "$FINAL_NAME"
           echo "FINAL_FPK=$FINAL_NAME" >> $GITHUB_ENV
 
@@ -207,7 +213,7 @@ jobs:
       - name: 更新 .last_built_version 并提交
         working-directory: buildbot_repo
         run: |
-          UPSTREAM="${{ needs.check.outputs.upstream_version }}"
+          UPSTREAM="${{ needs.build.outputs.upstream_version }}"
           if [ -f fnpack/AniRSS/.last_built_version ] && \
              [ "$(cat fnpack/AniRSS/.last_built_version | tr -d '[:space:]')" = "$UPSTREAM" ]; then
             echo "Already marked as $UPSTREAM"
@@ -266,9 +272,9 @@ jobs:
           REPO="shupian35/FnDepot"
           TAG=$(date +'%Y.%-m.%-d')
           TITLE="$TAG 更新"
-          MANIFEST_VERSION="${{ needs.check.outputs.manifest_version }}"
-          UPSTREAM_VERSION="${{ needs.check.outputs.upstream_version }}"
-          CHANGELOG="${{ needs.check.outputs.changelog }}"
+          MANIFEST_VERSION="${{ needs.build.outputs.manifest_version }}"
+          UPSTREAM_VERSION="${{ needs.build.outputs.upstream_version }}"
+          CHANGELOG="${{ needs.build.outputs.changelog }}"
 
           NEW_NOTE="构建 AniRSS 版本 ${MANIFEST_VERSION}（基于上游 v${UPSTREAM_VERSION}）。更新日志：${CHANGELOG}"
 
