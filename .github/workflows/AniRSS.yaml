@@ -182,8 +182,8 @@ jobs:
         id: modify
         run: |
           MANIFEST_PATH="build_workspace/AniRSS/manifest"
-          MV="${{ needs.build.outputs.manifest_version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
+          MV="${{ needs.check.outputs.manifest_version }}"
+          CHANGELOG="${{ needs.check.outputs.changelog }}"
           sudo apt-get update && sudo apt-get install -y jq
           ESCAPED_CHANGELOG=$(printf '%s' "$CHANGELOG" | jq -sRr @json)
           sed -i "s/\${VERSION}/$MV/g" "$MANIFEST_PATH"
@@ -274,7 +274,7 @@ jobs:
           TITLE="$TAG 更新"
           MANIFEST_VERSION="${{ needs.build.outputs.manifest_version }}"
           UPSTREAM_VERSION="${{ needs.build.outputs.upstream_version }}"
-          CHANGELOG="${{ needs.build.outputs.changelog }}"
+          CHANGELOG="${{ needs.check.outputs.changelog }}"
 
           NEW_NOTE="构建 AniRSS 版本 ${MANIFEST_VERSION}（基于上游 v${UPSTREAM_VERSION}）。更新日志：${CHANGELOG}"
 
