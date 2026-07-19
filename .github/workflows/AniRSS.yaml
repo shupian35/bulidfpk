@@ -205,6 +205,7 @@ jobs:
           if-no-files-found: error
 
       - name: 更新 .last_built_version 并提交
+        working-directory: buildbot_repo
         run: |
           UPSTREAM="${{ needs.check.outputs.upstream_version }}"
           if [ -f fnpack/AniRSS/.last_built_version ] && \
