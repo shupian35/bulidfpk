@@ -271,6 +271,9 @@ jobs:
         if: steps.decide.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.BUILDBOT }}
+          MANIFEST_VERSION: ${{ needs.build.outputs.manifest_version }}
+          UPSTREAM_VERSION: ${{ needs.build.outputs.upstream_version }}
+          CHANGELOG: ${{ needs.check.outputs.changelog }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "::notice::secrets.BUILDBOT 未配置，跳过 FnDepot 发布（如需启用请在仓库 Settings -> Secrets 添加 repo scope 的 PAT）"
@@ -280,9 +283,6 @@ jobs:
           REPO="shupian35/FnDepot"
           TAG=$(date +'%Y.%-m.%-d')
           TITLE="$TAG 更新"
-          MANIFEST_VERSION="${{ needs.build.outputs.manifest_version }}"
-          UPSTREAM_VERSION="${{ needs.build.outputs.upstream_version }}"
-          CHANGELOG="${{ needs.check.outputs.changelog }}"
 
           NEW_NOTE="构建 AniRSS 版本 ${MANIFEST_VERSION}（基于上游 v${UPSTREAM_VERSION}）。更新日志：${CHANGELOG}"
 
