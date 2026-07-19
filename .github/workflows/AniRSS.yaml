@@ -273,7 +273,7 @@ jobs:
           GH_TOKEN: ${{ secrets.BUILDBOT }}
           MANIFEST_VERSION: ${{ needs.build.outputs.manifest_version }}
           UPSTREAM_VERSION: ${{ needs.build.outputs.upstream_version }}
-          CHANGELOG: ${{ needs.check.outputs.changelog }}
+          CHANGELOG: ${{ needs.build.outputs.changelog }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "::notice::secrets.BUILDBOT 未配置，跳过 FnDepot 发布（如需启用请在仓库 Settings -> Secrets 添加 repo scope 的 PAT）"
