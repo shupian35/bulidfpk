@@ -13,10 +13,48 @@ MCP_ENABLED="$mcp_enabled"
 SWAGGER_ENABLED="$swagger_enabled"
 
 log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+configure_utf8_locale() {
+    local candidate
+    local selected=""
+    local available=""
+    local charmap="unknown"
+
+    if command -v locale >/dev/null 2>&1; then
+        available=$(locale -a 2>/dev/null || true)
+        while IFS= read -r candidate; do
+            case "$candidate" in
+                C.UTF-8|C.utf8|en_US.UTF-8|en_US.utf8)
+                    selected="$candidate"
+                    break
+                    ;;
+            esac
+        done <<< "$available"
+    fi
+
+    # Modern fnOS provides C.UTF-8/C.utf8. Keep a deterministic fallback so
+    # Java does not inherit the service manager's ASCII C locale.
+    if [ -z "$selected" ]; then
+        selected="C.UTF-8"
+    fi
+
+    export LANG="$selected"
+    export LC_ALL="$selected"
+    export LC_CTYPE="$selected"
+
+    if command -v locale >/dev/null 2>&1; then
+        charmap=$(locale charmap 2>/dev/null || echo "unknown")
+    fi
+    log_msg "Locale: LANG=${LANG}, LC_ALL=${LC_ALL}, charmap=${charmap}"
 }
 
 get_java_cmd() {
+    if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/java" ]; then
+        echo "${JAVA_HOME}/bin/java"
+        return
+    fi
     if [ -x "/var/apps/java-17-openj9/target/bin/java" ]; then
         echo "/var/apps/java-17-openj9/target/bin/java"
         return
@@ -33,9 +71,11 @@ start_process() {
         return 0
     fi
 
+    configure_utf8_locale
+
     JAVA_CMD=$(get_java_cmd)
     if [ -z "$JAVA_CMD" ]; then
-        echo "未找到 Java! 请先安装 java-17-openj9 或 java-17-openjdk 应用" > ${TRIM_TEMP_LOGFILE}
+        echo "未找到 Java! 请先安装 java-17-openj9 或 java-17-openjdk 应用" > "${TRIM_TEMP_LOGFILE}"
         return 1
     fi
 
@@ -68,7 +108,7 @@ start_process() {
 
     cd "${APP_DIR}"
     nohup ${CMD} 2>&1 &
-    printf "%s" "$!" > ${PID_FILE}
+    printf "%s" "$!" > "${PID_FILE}"
     return 0
 }
 
@@ -85,7 +125,7 @@ stop_process() {
         fi
 
         log_msg "send TERM signal to PID:${pid}..."
-        kill -TERM ${pid} >> ${LOG_FILE} 2>&1
+        kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1
 
         local count=0
         while check_process "${pid}" && [ $count -lt 15 ]; do
