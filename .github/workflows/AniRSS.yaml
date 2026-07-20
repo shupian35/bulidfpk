@@ -221,7 +221,7 @@ jobs:
       - name: 更新 .last_built_version 并提交
         working-directory: buildbot_repo
         run: |
-          UPSTREAM="${{ needs.build.outputs.upstream_version }}"
+          UPSTREAM="${{ needs.check.outputs.upstream_version }}"
           if [ -f fnpack/AniRSS/.last_built_version ] && \
              [ "$(cat fnpack/AniRSS/.last_built_version | tr -d '[:space:]')" = "$UPSTREAM" ]; then
             echo "Already marked as $UPSTREAM"
