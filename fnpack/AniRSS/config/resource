@@ -16,6 +16,14 @@
             "AniRSS"
           ]
         }
+      },
+      {
+        "name": "AniRSS/torrents",
+        "permission": {
+          "rw": [
+            "AniRSS"
+          ]
+        }
       }
     ]
   }

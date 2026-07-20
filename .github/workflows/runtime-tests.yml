@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - fnpack/AniRSS/cmd/**
+      - fnpack/AniRSS/manifest
+      - fnpack/AniRSS/config/**
       - tests/**
       - .github/workflows/runtime-tests.yml
   pull_request:
@@ -22,3 +24,5 @@ jobs:
         run: bash -n fnpack/AniRSS/cmd/main
       - name: Test UTF-8 runtime locale
         run: bash tests/test-main-locale.sh
+      - name: Validate package permissions
+        run: node tests/test-anirss-package-config.mjs

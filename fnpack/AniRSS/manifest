@@ -14,5 +14,5 @@ os_min_version=1.2.0
 desktop_uidir=ui
 desktop_applaunchname=AniRSS.Application
 checkport=false
-disable_authorization_path=true
+disable_authorization_path=false
 changelog=${CHANGELOG}
