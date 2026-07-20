@@ -112,7 +112,7 @@ jobs:
           LAST: ${{ steps.last.outputs.last }}
           UPSTREAM: ${{ steps.fetch.outputs.upstream_version }}
           FORCE: ${{ github.event.inputs.force }}
-          EVENT: ${{ github.event.name }}
+          EVENT: ${{ github.event_name }}
         run: |
           SHOULD="false"
           if [ "$EVENT" = "workflow_dispatch" ]; then
@@ -253,7 +253,7 @@ jobs:
       - name: 判断是否执行发布
         id: decide
         env:
-          EVENT: ${{ github.event.name }}
+          EVENT: ${{ github.event_name }}
           PUB: ${{ github.event.inputs.publish }}
         run: |
           if [ "$EVENT" = "schedule" ]; then
